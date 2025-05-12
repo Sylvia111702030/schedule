@@ -68,14 +68,32 @@
             z-index: 1000;
             display: none;
         }
+
+        .mode-select {
+            text-align: center;
+            margin: 20px;
+        }
+
+        .mode-button {
+            margin: 10px;
+            padding: 15px 30px;
+            font-size: 18px;
+        }
     </style>
 </head>
 <body>
+    <!-- 模式選擇 -->
+    <div id="mode-select" class="mode-select">
+        <h2>請選擇掃描方式</h2>
+        <button onclick="showQRScanner()" class="mode-button">QR Code 掃描器</button>
+        <button onclick="checkUrlPlayer()" class="mode-button">使用 URL 參數</button>
+    </div>
+
     <!-- 狀態訊息 -->
     <div id="status-message" class="status-message"></div>
 
     <!-- QR Code 掃描區域 -->
-    <div id="qr-reader"></div>
+    <div id="qr-reader" style="display: none;"></div>
     
     <!-- AR 場景 -->
     <a-scene id="ar-scene" embedded arjs="sourceType: webcam; debugUIEnabled: false;">
@@ -120,16 +138,45 @@
 
         // 玩家識別碼對照表
         const validPlayerIds = {
-            '7f8e9d6c5b4a': 1,
-            '1a2b3c4d5e6f': 2,
-            '9d8c7b6a5f4e': 3,
-            '2e3f4a5b6c7d': 4,
-            '5f4e3d2c1b0a': 5
+            '7f8e9d6c5b4a': 1,  // 玩家1（反派）
+            '1a2b3c4d5e6f': 2,  // 玩家2
+            '9d8c7b6a5f4e': 3,  // 玩家3
+            '2e3f4a5b6c7d': 4,  // 玩家4
+            '5f4e3d2c1b0a': 5   // 玩家5
         };
 
         let currentUserId = null;
         let currentGameId = null;
         let currentPlayerNumber = null;
+        let html5QrcodeScanner = null;
+
+        // 顯示 QR 掃描器
+        function showQRScanner() {
+            document.getElementById('mode-select').style.display = 'none';
+            document.getElementById('qr-reader').style.display = 'block';
+            
+            html5QrcodeScanner = new Html5QrcodeScanner(
+                "qr-reader", { fps: 10, qrbox: 250 });
+            
+            html5QrcodeScanner.render(onScanSuccess, onScanError);
+        }
+
+        // 檢查 URL 參數
+        async function checkUrlPlayer() {
+            const playerId = getPlayerIdFromUrl();
+            if (playerId && validPlayerIds[playerId]) {
+                document.getElementById('mode-select').style.display = 'none';
+                await startGame(playerId);
+            } else {
+                showStatus('URL 中沒有有效的玩家代碼！', 3000);
+            }
+        }
+
+        // 從 URL 讀取玩家 ID
+        function getPlayerIdFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('player');
+        }
 
         // 顯示狀態訊息
         function showStatus(message, duration = 3000) {
@@ -141,22 +188,31 @@
             }, duration);
         }
 
-        // 初始化 QR Code 掃描器
-        const html5QrcodeScanner = new Html5QrcodeScanner(
-            "qr-reader", { fps: 10, qrbox: 250 });
-
-        html5QrcodeScanner.render(onScanSuccess, onScanError);
-
         // QR Code 掃描成功
         async function onScanSuccess(decodedText, decodedResult) {
-            // 驗證玩家識別碼
-            if (!validPlayerIds[decodedText]) {
-                showStatus('無效的 QR Code！', 2000);
-                return;
+            // 停止掃描
+            html5QrcodeScanner.clear();
+            
+            // 檢查是否為有效的玩家 ID
+            const playerId = decodedText.replace('https://github.com/Sylvia111702030/schedule/?player=', '');
+            
+            if (validPlayerIds[playerId]) {
+                document.getElementById('qr-reader').style.display = 'none';
+                await startGame(playerId);
+            } else {
+                showStatus('無效的 QR Code！', 3000);
+                document.getElementById('mode-select').style.display = 'block';
             }
+        }
 
-            currentUserId = decodedText;
-            currentPlayerNumber = validPlayerIds[decodedText];
+        function onScanError(error) {
+            console.warn(`QR Code 掃描錯誤: ${error}`);
+        }
+
+        // 開始遊戲
+        async function startGame(playerId) {
+            currentUserId = playerId;
+            currentPlayerNumber = validPlayerIds[playerId];
             
             // 檢查是否為第一位玩家
             const { data: existingGame } = await supabase
@@ -165,7 +221,6 @@
                 .limit(1);
 
             if (!existingGame || existingGame.length === 0) {
-                // 第一位玩家，建立新遊戲
                 currentGameId = crypto.randomUUID();
                 await initializeGame();
                 showStatus('遊戲已建立！你是反派！', 3000);
@@ -174,8 +229,7 @@
                 showStatus('成功加入遊戲！', 2000);
             }
 
-            // 隱藏掃描器，顯示 AR 場景和控制面板
-            document.getElementById('qr-reader').style.display = 'none';
+            // 顯示 AR 場景和控制面板
             document.getElementById('ar-scene').style.display = 'block';
             document.getElementById('control-panel').style.display = 'block';
 
@@ -183,13 +237,8 @@
             startRealtimeUpdates();
         }
 
-        function onScanError(error) {
-            console.warn(`QR Code 掃描錯誤: ${error}`);
-        }
-
         // 初始化遊戲
         async function initializeGame() {
-            // 第一位玩家一定是反派
             await supabase
                 .from('roles')
                 .insert({
@@ -271,6 +320,14 @@
                     { event: '*', schema: 'public', table: 'schedules' },
                     updateARDisplay)
                 .subscribe();
+        }
+
+        // 檢查 URL 參數
+        window.onload = function() {
+            const playerId = getPlayerIdFromUrl();
+            if (playerId && validPlayerIds[playerId]) {
+                checkUrlPlayer();
+            }
         }
     </script>
 </body>
