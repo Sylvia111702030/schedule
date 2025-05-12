@@ -67,3 +67,211 @@
             border-radius: 20px;
             z-index: 1000;
             display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- 狀態訊息 -->
+    <div id="status-message" class="status-message"></div>
+
+    <!-- QR Code 掃描區域 -->
+    <div id="qr-reader"></div>
+    
+    <!-- AR 場景 -->
+    <a-scene id="ar-scene" embedded arjs="sourceType: webcam; debugUIEnabled: false;">
+        <a-marker preset="hiro">
+            <a-text id="schedule-text" 
+                   value="載入中..." 
+                   position="0 0.5 0" 
+                   rotation="-90 0 0" 
+                   align="center" 
+                   color="#000000"
+                   width="2">
+            </a-text>
+        </a-marker>
+        <a-entity camera></a-entity>
+    </a-scene>
+    
+    <!-- 控制面板 -->
+    <div class="control-panel" id="control-panel" style="display: none;">
+        <select id="time-slot">
+            <option value="8-10">8:00-10:00</option>
+            <option value="10-12">10:00-12:00</option>
+            <option value="12-14">12:00-14:00</option>
+            <option value="14-16">14:00-16:00</option>
+            <option value="16-18">16:00-18:00</option>
+            <option value="18-20">18:00-20:00</option>
+        </select>
+        <select id="weekday">
+            <option value="Monday">星期一</option>
+            <option value="Tuesday">星期二</option>
+            <option value="Wednesday">星期三</option>
+            <option value="Thursday">星期四</option>
+            <option value="Friday">星期五</option>
+        </select>
+        <button onclick="saveSchedule()">儲存時間</button>
+    </div>
+
+    <script>
+        // Supabase 設定
+        const supabaseUrl = 'https://zjbhnljmhaqkytobiogm.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqYmhubGptaGFxa3l0b2Jpb2dtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcwMjk4OTcsImV4cCI6MjA2MjYwNTg5N30.XOYi3FbhCr9Y1g2svklXQW3SUxKiCgf1iTI5ueUrNao';
+        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+        // 玩家識別碼對照表
+        const validPlayerIds = {
+            '7f8e9d6c5b4a': 1,
+            '1a2b3c4d5e6f': 2,
+            '9d8c7b6a5f4e': 3,
+            '2e3f4a5b6c7d': 4,
+            '5f4e3d2c1b0a': 5
+        };
+
+        let currentUserId = null;
+        let currentGameId = null;
+        let currentPlayerNumber = null;
+
+        // 顯示狀態訊息
+        function showStatus(message, duration = 3000) {
+            const statusElement = document.getElementById('status-message');
+            statusElement.textContent = message;
+            statusElement.style.display = 'block';
+            setTimeout(() => {
+                statusElement.style.display = 'none';
+            }, duration);
+        }
+
+        // 初始化 QR Code 掃描器
+        const html5QrcodeScanner = new Html5QrcodeScanner(
+            "qr-reader", { fps: 10, qrbox: 250 });
+
+        html5QrcodeScanner.render(onScanSuccess, onScanError);
+
+        // QR Code 掃描成功
+        async function onScanSuccess(decodedText, decodedResult) {
+            // 驗證玩家識別碼
+            if (!validPlayerIds[decodedText]) {
+                showStatus('無效的 QR Code！', 2000);
+                return;
+            }
+
+            currentUserId = decodedText;
+            currentPlayerNumber = validPlayerIds[decodedText];
+            
+            // 檢查是否為第一位玩家
+            const { data: existingGame } = await supabase
+                .from('roles')
+                .select('game_id')
+                .limit(1);
+
+            if (!existingGame || existingGame.length === 0) {
+                // 第一位玩家，建立新遊戲
+                currentGameId = crypto.randomUUID();
+                await initializeGame();
+                showStatus('遊戲已建立！你是反派！', 3000);
+            } else {
+                currentGameId = existingGame[0].game_id;
+                showStatus('成功加入遊戲！', 2000);
+            }
+
+            // 隱藏掃描器，顯示 AR 場景和控制面板
+            document.getElementById('qr-reader').style.display = 'none';
+            document.getElementById('ar-scene').style.display = 'block';
+            document.getElementById('control-panel').style.display = 'block';
+
+            // 開始即時更新時間表
+            startRealtimeUpdates();
+        }
+
+        function onScanError(error) {
+            console.warn(`QR Code 掃描錯誤: ${error}`);
+        }
+
+        // 初始化遊戲
+        async function initializeGame() {
+            // 第一位玩家一定是反派
+            await supabase
+                .from('roles')
+                .insert({
+                    game_id: currentGameId,
+                    user_id: currentUserId,
+                    is_spy: true
+                });
+        }
+
+        // 儲存時間表
+        async function saveSchedule() {
+            const timeSlot = document.getElementById('time-slot').value;
+            const weekday = document.getElementById('weekday').value;
+
+            try {
+                await supabase
+                    .from('schedules')
+                    .insert({
+                        game_id: currentGameId,
+                        user_id: currentUserId,
+                        weekday: weekday,
+                        time_slot: timeSlot
+                    });
+
+                showStatus('時間已儲存！', 2000);
+                updateARDisplay();
+            } catch (error) {
+                showStatus('儲存失敗，請重試', 2000);
+                console.error('儲存錯誤:', error);
+            }
+        }
+
+        // 更新 AR 顯示
+        async function updateARDisplay() {
+            const { data: schedules } = await supabase
+                .from('schedules')
+                .select('*')
+                .eq('user_id', currentUserId)
+                .eq('game_id', currentGameId);
+
+            const { data: role } = await supabase
+                .from('roles')
+                .select('is_spy')
+                .eq('user_id', currentUserId)
+                .eq('game_id', currentGameId)
+                .single();
+
+            let displayText = `玩家 ${currentPlayerNumber}\n`;
+            displayText += role?.is_spy ? '身份：反派\n' : '身份：正派\n';
+            displayText += '您的時間表：\n';
+            
+            if (schedules && schedules.length > 0) {
+                const sortedSchedules = schedules.sort((a, b) => {
+                    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+                    return days.indexOf(a.weekday) - days.indexOf(b.weekday);
+                });
+
+                sortedSchedules.forEach(schedule => {
+                    const weekdayMap = {
+                        'Monday': '週一',
+                        'Tuesday': '週二',
+                        'Wednesday': '週三',
+                        'Thursday': '週四',
+                        'Friday': '週五'
+                    };
+                    displayText += `${weekdayMap[schedule.weekday]} ${schedule.time_slot}\n`;
+                });
+            }
+
+            const textEntity = document.getElementById('schedule-text');
+            textEntity.setAttribute('value', displayText);
+        }
+
+        // 開始即時更新
+        function startRealtimeUpdates() {
+            supabase
+                .channel('schedules')
+                .on('postgres_changes', 
+                    { event: '*', schema: 'public', table: 'schedules' },
+                    updateARDisplay)
+                .subscribe();
+        }
+    </script>
+</body>
+</html>
