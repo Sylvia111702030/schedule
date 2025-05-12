@@ -18,17 +18,93 @@
 </head>
 <body>
   <h2>虛實整合遊戲 Demo</h2>
-  <div id="step1">
-    <button onclick="startScan()">掃描牌卡（取得ID）</button>
-    <div id="reader" class="hidden"></div>
-    <div id="scan_result"></div>
-  </div>
-  <div id="step2" class="hidden">
-    <div>你的ID：<span id="user_id"></span></div>
-    <div>本場遊戲ID：<span id="game_id"></span></div>
-    <button onclick="showRole()">查詢我的身份</button>
-    <div id="role_result"></div>
-    <hr>
+  <div id="tip">請將你的牌卡（marker）對準鏡頭，僅會顯示自己的時間表</div>
+    <a-scene embedded arjs>
+      <!-- Hiro marker -->
+      <a-marker type="pattern" url="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/examples/marker-training/examples/pattern-files/pattern-hiro.patt" id="hiro-marker">
+        <a-entity id="scheduleText-hiro" position="0 0.5 0" text="value: 載入中...; color: #333; align: center; width: 4"></a-entity>
+      </a-marker>
+      <!-- Kanji marker -->
+      <a-marker type="pattern" url="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/examples/marker-training/examples/pattern-files/pattern-kanji.patt" id="kanji-marker">
+        <a-entity id="scheduleText-kanji" position="0 0.5 0" text="value: 載入中...; color: #333; align: center; width: 4"></a-entity>
+      </a-marker>
+      <!-- 你自訂的三個 marker（請換成你自己的 pattern 檔案路徑） -->
+      <a-marker type="pattern" url="pattern-marker1.patt" id="marker1">
+        <a-entity id="scheduleText-marker1" position="0 0.5 0" text="value: 載入中...; color: #333; align: center; width: 4"></a-entity>
+      </a-marker>
+      <a-marker type="pattern" url="pattern-marker2.patt" id="marker2">
+        <a-entity id="scheduleText-marker2" position="0 0.5 0" text="value: 載入中...; color: #333; align: center; width: 4"></a-entity>
+      </a-marker>
+      <a-marker type="pattern" url="pattern-marker3.patt" id="marker3">
+        <a-entity id="scheduleText-marker3" position="0 0.5 0" text="value: 載入中...; color: #333; align: center; width: 4"></a-entity>
+      </a-marker>
+      <a-entity camera></a-entity>
+    </a-scene>
+    <script>
+       // Supabase 設定
+      const supabaseUrl = 'https://zjbhnljmhaqkytobiogm.supabase.co';
+      const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqYmhubGptaGFxa3l0b2Jpb2dtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcwMjk4OTcsImV4cCI6MjA2MjYwNTg5N30.XOYi3FbhCr9Y1g2svklXQW3SUxKiCgf1iTI5ueUrNao';
+      const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+      // marker id 對應 user_id
+      const markerUserMap = {
+        'hiro-marker': 'playerA',
+        'kanji-marker': 'playerB',
+        'marker1': 'playerC',
+        'marker2': 'playerD',
+        'marker3': 'playerE'
+      };
+
+      // marker id 對應顯示文字的 entity id
+      const markerTextMap = {
+        'hiro-marker': 'scheduleText-hiro',
+        'kanji-marker': 'scheduleText-kanji',
+        'marker1': 'scheduleText-marker1',
+        'marker2': 'scheduleText-marker2',
+        'marker3': 'scheduleText-marker3'
+           };
+
+      // 取得本地 game_id
+      let game_id = localStorage.getItem('game_id');
+      if (!game_id) {
+        game_id = prompt('請輸入本場遊戲ID（game_id）');
+        if (game_id) localStorage.setItem('game_id', game_id);
+      }
+
+      // 時間表顯示格式
+      function formatScheduleTable(data) {
+        if (!data || data.length === 0) return '查無時間表';
+        // 依 weekday, time_slot 排序
+        const weekOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+        const slotOrder = ['8-10','10-12','12-14','14-16','16-18','18-20'];
+        data.sort((a, b) => {
+          const w1 = weekOrder.indexOf(a.weekday), w2 = weekOrder.indexOf(b.weekday);
+          if (w1 !== w2) return w1 - w2;
+          return slotOrder.indexOf(a.time_slot) - slotOrder.indexOf(b.time_slot);
+        });
+        // 組合文字
+        let result = '';
+        let lastWeek = '';
+        data.forEach(row => {
+          if (row.weekday !== lastWeek) {
+            result += `\\n${row.weekday}:\\n`;
+            lastWeek = row.weekday;
+          }
+          result += `  ${row.time_slot}: ${row.activity}\\n`;
+        });
+        return result.trim();
+      }
+
+      // 監聽所有 marker
+      Object.keys(markerUserMap).forEach(markerId => {
+        const marker = document.getElementById(markerId);
+        const textEntityId = markerTextMap[markerId];
+        marker.addEventListener('markerFound', async function () {
+          const user_id = markerUserMap[markerId];
+          if (!user_id) {
+            document.getElementById(textEntityId).setAttribute('text', 'value: 未對應玩家; color: #FF0000; align: center; width: 4');
+            return;
+          }
     <label>
       星期：
       <select id="weekday">
@@ -73,10 +149,6 @@
     <div id="end_result"></div>
   </div>
   <script>
-    // Supabase 設定
-    const supabaseUrl = 'https://zjbhnljmhaqkytobiogm.supabase.co';
-    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqYmhubGptaGFxa3l0b2Jpb2dtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcwMjk4OTcsImV4cCI6MjA2MjYwNTg5N30.XOYi3FbhCr9Y1g2svklXQW3SUxKiCgf1iTI5ueUrNao';
-    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
     // UUID 產生器
     function generateUUID() {
