@@ -21,17 +21,12 @@
 </head>
 <body>
   <h2>AR 時間表 Demo</h2>
-  <div id="tip">請將你的牌卡（marker）對準鏡頭，僅會顯示自己的時間表</div>
+  <div id="tip">請將你的牌卡對準鏡頭，僅會顯示自己的時間表</div>
 
   <!-- AR 場景 -->
   <a-scene embedded arjs>
-    <!-- Hiro marker -->
-    <a-marker type="pattern" url="pattern-hiro.patt" id="hiro-marker">
-      <a-entity id="scheduleText-hiro" position="0 0.5 0" text="value: 載入中...; color: #333; align: center; width: 4"></a-entity>
-    </a-marker>
-    <!-- Kanji marker -->
-    <a-marker type="pattern" url="pattern-kanji.patt" id="kanji-marker">
-      <a-entity id="scheduleText-kanji" position="0 0.5 0" text="value: 載入中...; color: #333; align: center; width: 4"></a-entity>
+    <a-marker type="pattern" url="pattern-mylogo.patt" id="mylogo-marker">
+      <a-entity id="scheduleText-mylogo" position="0 0.5 0" text="value: 載入中...; color: #333; align: center; width: 4"></a-entity>
     </a-marker>
     <a-entity camera></a-entity>
   </a-scene>
@@ -88,16 +83,11 @@
     const supabaseKey = 'your-supabase-key';
     const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
-    // marker id 對應 user_id
     const markerUserMap = {
-      'hiro-marker': 'playerA',
-      'kanji-marker': 'playerB'
+      'mylogo-marker': 'player1',
     };
-
-    // marker id 對應顯示文字的 entity id
     const markerTextMap = {
-      'hiro-marker': 'scheduleText-hiro',
-      'kanji-marker': 'scheduleText-kanji'
+      'mylogo-marker': 'scheduleText-mylogo',
     };
 
     // 取得本地 game_id
