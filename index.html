@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>遊戲時間表 AR</title>
+    <title>神秘時間表 AR</title>
     
     <!-- AR.js 和 A-Frame -->
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
@@ -32,158 +32,38 @@
             left: 50%;
             transform: translateX(-50%);
             z-index: 1000;
-            background: rgba(255,255,255,0.8);
-            padding: 10px;
-            border-radius: 10px;
+            background: rgba(255,255,255,0.9);
+            padding: 15px;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         
         select, button {
             margin: 5px;
-            padding: 8px;
+            padding: 10px;
             font-size: 16px;
-        }
-    </style>
-</head>
-<body>
-    <!-- QR Code 掃描區域 -->
-    <div id="qr-reader"></div>
-    
-    <!-- AR 場景 -->
-    <a-scene id="ar-scene" embedded arjs="sourceType: webcam; debugUIEnabled: false;">
-        <a-marker preset="hiro">
-            <a-text id="schedule-text" 
-                   value="載入中..." 
-                   position="0 0.5 0" 
-                   rotation="-90 0 0" 
-                   align="center" 
-                   color="#000000">
-            </a-text>
-        </a-marker>
-        <a-entity camera></a-entity>
-    </a-scene>
-    
-    <!-- 控制面板 -->
-    <div class="control-panel">
-        <select id="time-slot">
-            <option value="8-10">8:00-10:00</option>
-            <option value="10-12">10:00-12:00</option>
-            <option value="12-14">12:00-14:00</option>
-            <option value="14-16">14:00-16:00</option>
-            <option value="16-18">16:00-18:00</option>
-            <option value="18-20">18:00-20:00</option>
-        </select>
-        <select id="weekday">
-            <option value="Monday">星期一</option>
-            <option value="Tuesday">星期二</option>
-            <option value="Wednesday">星期三</option>
-            <option value="Thursday">星期四</option>
-            <option value="Friday">星期五</option>
-        </select>
-        <button onclick="saveSchedule()">儲存時間</button>
-    </div>
-
-    <script>
-        // Supabase 設定
-        const supabaseUrl = 'https://zjbhnljmhaqkytobiogm.supabase.co';
-        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqYmhubGptaGFxa3l0b2Jpb2dtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcwMjk4OTcsImV4cCI6MjA2MjYwNTg5N30.XOYi3FbhCr9Y1g2svklXQW3SUxKiCgf1iTI5ueUrNao';
-        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
-
-        let currentUserId = null;
-        let currentGameId = null;
-
-        // 初始化 QR Code 掃描器
-        const html5QrcodeScanner = new Html5QrcodeScanner(
-            "qr-reader", { fps: 10, qrbox: 250 });
-
-        html5QrcodeScanner.render(onScanSuccess, onScanError);
-
-        // QR Code 掃描成功
-        async function onScanSuccess(decodedText, decodedResult) {
-            currentUserId = decodedText;
-            
-            // 檢查是否為第一位玩家
-            const { data: existingGame } = await supabase
-                .from('roles')
-                .select('game_id')
-                .limit(1);
-
-            if (!existingGame || existingGame.length === 0) {
-                // 第一位玩家，建立新遊戲
-                currentGameId = crypto.randomUUID();
-                await initializeGame();
-            } else {
-                currentGameId = existingGame[0].game_id;
-            }
-
-            // 隱藏掃描器，顯示 AR 場景
-            document.getElementById('qr-reader').style.display = 'none';
-            document.getElementById('ar-scene').style.display = 'block';
-
-            // 開始即時更新時間表
-            startRealtimeUpdates();
+            border-radius: 5px;
+            border: 1px solid #ccc;
         }
 
-        function onScanError(error) {
-            console.warn(`QR Code 掃描錯誤: ${error}`);
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
         }
 
-        // 初始化遊戲
-        async function initializeGame() {
-            // 分配角色（第一位玩家一定是反派）
-            await supabase
-                .from('roles')
-                .insert({
-                    game_id: currentGameId,
-                    user_id: currentUserId,
-                    is_spy: true
-                });
+        button:hover {
+            background: #45a049;
         }
 
-        // 儲存時間表
-        async function saveSchedule() {
-            const timeSlot = document.getElementById('time-slot').value;
-            const weekday = document.getElementById('weekday').value;
-
-            await supabase
-                .from('schedules')
-                .insert({
-                    game_id: currentGameId,
-                    user_id: currentUserId,
-                    weekday: weekday,
-                    time_slot: timeSlot
-                });
-
-            updateARDisplay();
-        }
-
-        // 更新 AR 顯示
-        async function updateARDisplay() {
-            const { data: schedules } = await supabase
-                .from('schedules')
-                .select('*')
-                .eq('user_id', currentUserId)
-                .eq('game_id', currentGameId);
-
-            let displayText = '您的時間表：\n';
-            if (schedules && schedules.length > 0) {
-                schedules.forEach(schedule => {
-                    displayText += `${schedule.weekday} ${schedule.time_slot}\n`;
-                });
-            }
-
-            const textEntity = document.getElementById('schedule-text');
-            textEntity.setAttribute('value', displayText);
-        }
-
-        // 開始即時更新
-        function startRealtimeUpdates() {
-            supabase
-                .channel('schedules')
-                .on('postgres_changes', 
-                    { event: '*', schema: 'public', table: 'schedules' },
-                    updateARDisplay)
-                .subscribe();
-        }
-    </script>
-</body>
-</html>
+        .status-message {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255,255,255,0.9);
+            padding: 10px 20px;
+            border-radius: 20px;
+            z-index: 1000;
+            display: none;
