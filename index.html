@@ -1,192 +1,189 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <title>AR 時間表 Demo</title>
-  <!-- 引入 A-Frame 與 AR.js -->
-  <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.min.js"></script>
-  <!-- 引入 Supabase -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
-  <style>
-    body { font-family: sans-serif; margin: 2em; }
-    label { display: block; margin-top: 1em; }
-    select, input[type="text"] { margin-right: 1em; }
-    #result { background: #f0f0f0; padding: 1em; margin-top: 1em; white-space: pre-wrap; }
-    table { border-collapse: collapse; margin-top: 1em; }
-    th, td { border: 1px solid #ccc; padding: 0.5em; }
-    #reader { margin-top: 1em; }
-    .hidden { display: none; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>遊戲時間表 AR</title>
+    
+    <!-- AR.js 和 A-Frame -->
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    
+    <!-- QR Code 掃描器 -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        #qr-reader {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+        }
+        
+        #ar-scene {
+            display: none;
+        }
+        
+        .control-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(255,255,255,0.8);
+            padding: 10px;
+            border-radius: 10px;
+        }
+        
+        select, button {
+            margin: 5px;
+            padding: 8px;
+            font-size: 16px;
+        }
+    </style>
 </head>
 <body>
-  <h2>AR 時間表 Demo</h2>
-  <div id="tip">請將你的牌卡對準鏡頭，僅會顯示自己的時間表</div>
+    <!-- QR Code 掃描區域 -->
+    <div id="qr-reader"></div>
+    
+    <!-- AR 場景 -->
+    <a-scene id="ar-scene" embedded arjs="sourceType: webcam; debugUIEnabled: false;">
+        <a-marker preset="hiro">
+            <a-text id="schedule-text" 
+                   value="載入中..." 
+                   position="0 0.5 0" 
+                   rotation="-90 0 0" 
+                   align="center" 
+                   color="#000000">
+            </a-text>
+        </a-marker>
+        <a-entity camera></a-entity>
+    </a-scene>
+    
+    <!-- 控制面板 -->
+    <div class="control-panel">
+        <select id="time-slot">
+            <option value="8-10">8:00-10:00</option>
+            <option value="10-12">10:00-12:00</option>
+            <option value="12-14">12:00-14:00</option>
+            <option value="14-16">14:00-16:00</option>
+            <option value="16-18">16:00-18:00</option>
+            <option value="18-20">18:00-20:00</option>
+        </select>
+        <select id="weekday">
+            <option value="Monday">星期一</option>
+            <option value="Tuesday">星期二</option>
+            <option value="Wednesday">星期三</option>
+            <option value="Thursday">星期四</option>
+            <option value="Friday">星期五</option>
+        </select>
+        <button onclick="saveSchedule()">儲存時間</button>
+    </div>
 
-  <!-- AR 場景 -->
-  <a-scene embedded arjs>
-    <a-marker type="pattern" url="pattern-IMG_0100.patt" id="mylogo-marker">
-      <a-entity id="scheduleText-mylogo" position="0 0.5 0" text="value: 載入中...; color: #333; align: center; width: 4"></a-entity>
-    </a-marker>
-    <a-entity camera></a-entity>
-  </a-scene>
+    <script>
+        // Supabase 設定
+        const supabaseUrl = 'https://zjbhnljmhaqkytobiogm.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqYmhubGptaGFxa3l0b2Jpb2dtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcwMjk4OTcsImV4cCI6MjA2MjYwNTg5N30.XOYi3FbhCr9Y1g2svklXQW3SUxKiCgf1iTI5ueUrNao';
+        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
-  <!-- 行程填寫表單 -->
-  <div>
-    <label>
-      星期：
-      <select id="weekday">
-        <option value="Monday">星期一</option>
-        <option value="Tuesday">星期二</option>
-        <option value="Wednesday">星期三</option>
-        <option value="Thursday">星期四</option>
-        <option value="Friday">星期五</option>
-      </select>
-    </label>
-    <label>
-      時段：
-      <select id="time_slot">
-        <option value="8-10">8-10</option>
-        <option value="10-12">10-12</option>
-        <option value="12-14">12-14</option>
-        <option value="14-16">14-16</option>
-        <option value="16-18">16-18</option>
-        <option value="18-20">18-20</option>
-      </select>
-    </label>
-    <label>
-      活動：
-      <input id="activity" value="上課">
-    </label>
-    <button onclick="saveSchedule()">儲存時段</button>
-    <button onclick="getMySchedule()">查詢我的時間表</button>
-    <button onclick="getAvailableUsers()">查詢此時段有空的人</button>
-    <div id="result"></div>
-    <table id="schedule_table" style="display:none;">
-      <thead>
-        <tr>
-          <th>星期</th>
-          <th>時段</th>
-          <th>活動</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-    <hr>
-    <button onclick="endGame()" style="color:red;">結束遊戲（清除本場所有資料）</button>
-    <div id="end_result"></div>
-  </div>
+        let currentUserId = null;
+        let currentGameId = null;
 
-  <script>
-    // Supabase 設定
-    const supabaseUrl = 'https://your-supabase-url.supabase.co';
-    const supabaseKey = 'your-supabase-key';
-    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+        // 初始化 QR Code 掃描器
+        const html5QrcodeScanner = new Html5QrcodeScanner(
+            "qr-reader", { fps: 10, qrbox: 250 });
 
-    const markerUserMap = {
-      'mylogo-marker': 'player1',
-    };
-    const markerTextMap = {
-      'mylogo-marker': 'scheduleText-mylogo',
-    };
+        html5QrcodeScanner.render(onScanSuccess, onScanError);
 
-    // 取得本地 game_id
-    let game_id = localStorage.getItem('game_id');
-    if (!game_id) {
-      game_id = prompt('請輸入本場遊戲ID（game_id）');
-      if (game_id) localStorage.setItem('game_id', game_id);
-    }
+        // QR Code 掃描成功
+        async function onScanSuccess(decodedText, decodedResult) {
+            currentUserId = decodedText;
+            
+            // 檢查是否為第一位玩家
+            const { data: existingGame } = await supabase
+                .from('roles')
+                .select('game_id')
+                .limit(1);
 
-    // 時間表顯示格式
-    function formatScheduleTable(data) {
-      if (!data || data.length === 0) return '查無時間表';
-      // 依 weekday, time_slot 排序
-      const weekOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
-      const slotOrder = ['8-10','10-12','12-14','14-16','16-18','18-20'];
-      data.sort((a, b) => {
-        const w1 = weekOrder.indexOf(a.weekday), w2 = weekOrder.indexOf(b.weekday);
-        if (w1 !== w2) return w1 - w2;
-        return slotOrder.indexOf(a.time_slot) - slotOrder.indexOf(b.time_slot);
-      });
-      // 組合文字
-      let result = '';
-      let lastWeek = '';
-      data.forEach(row => {
-        if (row.weekday !== lastWeek) {
-          result += `\n${row.weekday}:\n`;
-          lastWeek = row.weekday;
+            if (!existingGame || existingGame.length === 0) {
+                // 第一位玩家，建立新遊戲
+                currentGameId = crypto.randomUUID();
+                await initializeGame();
+            } else {
+                currentGameId = existingGame[0].game_id;
+            }
+
+            // 隱藏掃描器，顯示 AR 場景
+            document.getElementById('qr-reader').style.display = 'none';
+            document.getElementById('ar-scene').style.display = 'block';
+
+            // 開始即時更新時間表
+            startRealtimeUpdates();
         }
-        result += `  ${row.time_slot}: ${row.activity}\n`;
-      });
-      return result.trim();
-    }
 
-    // 監聽所有 marker
-    Object.keys(markerUserMap).forEach(markerId => {
-      const marker = document.getElementById(markerId);
-      const textEntityId = markerTextMap[markerId];
-      marker.addEventListener('markerFound', async function () {
-        const user_id = markerUserMap[markerId];
-        if (!user_id) {
-          document.getElementById(textEntityId).setAttribute('text', 'value: 未對應玩家; color: #FF0000; align: center; width: 4');
-          return;
+        function onScanError(error) {
+            console.warn(`QR Code 掃描錯誤: ${error}`);
         }
-        const { data, error } = await supabase
-          .from('schedules')
-          .select('weekday, time_slot, activity')
-          .eq('game_id', game_id)
-          .eq('user_id', user_id);
-        const text = formatScheduleTable(data);
-        document.getElementById(textEntityId).setAttribute('text', 'value', text);
-      });
-    });
 
-    // 儲存一筆時段活動
-    async function saveSchedule() {
-      const weekday = document.getElementById('weekday').value;
-      const time_slot = document.getElementById('time_slot').value;
-      const activity = document.getElementById('activity').value.trim();
-      const user_id = prompt('請輸入你的使用者ID（如：playerA）');
-      if (!user_id || !game_id || !weekday || !time_slot || !activity) {
-        document.getElementById('result').innerText = '請填寫所有欄位！';
-        return;
-      }
-      // 先檢查是否已存在，存在則更新
-      const { data: exist } = await supabase
-        .from('schedules')
-        .select('id')
-        .eq('game_id', game_id)
-        .eq('user_id', user_id)
-        .eq('weekday', weekday)
-        .eq('time_slot', time_slot)
-        .single();
-      let res;
-      if (exist && exist.id) {
-        res = await supabase
-          .from('schedules')
-          .update({ activity })
-          .eq('id', exist.id);
-      } else {
-        res = await supabase
-          .from('schedules')
-          .insert([{ game_id, user_id, weekday, time_slot, activity }]);
-      }
-      if (res.error) {
-        document.getElementById('result').innerText = '儲存失敗: ' + res.error.message;
-      } else {
-        document.getElementById('result').innerText = '儲存成功！';
-        getMySchedule();
-      }
-    }
+        // 初始化遊戲
+        async function initializeGame() {
+            // 分配角色（第一位玩家一定是反派）
+            await supabase
+                .from('roles')
+                .insert({
+                    game_id: currentGameId,
+                    user_id: currentUserId,
+                    is_spy: true
+                });
+        }
 
-    // 查詢自己的所有時段
-    async function getMySchedule() {
-      const user_id = prompt('請輸入你的使用者ID（如：playerA）');
-      const { data, error } = await supabase
-        .from('schedules')
-        .select('weekday, time_slot, activity')
-        .eq('game_id', game_id)
-        .eq('user_id', user_id)
-        .order('weekday', { ascending: true })
-        .order
-::contentReference[oaicite:16]{index=16}
+        // 儲存時間表
+        async function saveSchedule() {
+            const timeSlot = document.getElementById('time-slot').value;
+            const weekday = document.getElementById('weekday').value;
+
+            await supabase
+                .from('schedules')
+                .insert({
+                    game_id: currentGameId,
+                    user_id: currentUserId,
+                    weekday: weekday,
+                    time_slot: timeSlot
+                });
+
+            updateARDisplay();
+        }
+
+        // 更新 AR 顯示
+        async function updateARDisplay() {
+            const { data: schedules } = await supabase
+                .from('schedules')
+                .select('*')
+                .eq('user_id', currentUserId)
+                .eq('game_id', currentGameId);
+
+            let displayText = '您的時間表：\n';
+            if (schedules && schedules.length > 0) {
+                schedules.forEach(schedule => {
+                    displayText += `${schedule.weekday} ${schedule.time_slot}\n`;
+                });
+            }
+
+            const textEntity = document.getElementById('schedule-text');
+            textEntity.setAttribute('value', displayText);
+        }
+
+        // 開始即時更新
+        function startRealtimeUpdates() {
+            supabase
+                .channel('schedules')
+                .on('postgres_changes', 
+                    { event: '*', schema: 'public', table: 'schedules' },
+                    updateARDisplay)
+                .subscribe();
+        }
+    </script>
+</body>
+</html>
